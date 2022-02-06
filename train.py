@@ -4,6 +4,8 @@ from __future__ import print_function
 import time
 import argparse
 import numpy as np
+import logging
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -37,6 +39,22 @@ np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
+
+### set up logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+Path("log/").mkdir(parents=True, exist_ok=True)
+fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
+fh.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.WARN)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+logger.addHandler(fh)
+logger.addHandler(ch)
+logger.info(args)
 
 # Load data
 adj, features, labels, idx_train, idx_val, idx_test = load_data()
@@ -77,12 +95,8 @@ def train(epoch):
 
     loss_val = F.nll_loss(output[idx_val], labels[idx_val])
     acc_val = accuracy(output[idx_val], labels[idx_val])
-    print('Epoch: {:04d}'.format(epoch+1),
-          'loss_train: {:.4f}'.format(loss_train.item()),
-          'acc_train: {:.4f}'.format(acc_train.item()),
-          'loss_val: {:.4f}'.format(loss_val.item()),
-          'acc_val: {:.4f}'.format(acc_val.item()),
-          'time: {:.4f}s'.format(time.time() - t))
+    logger.info('Epoch: {:04d}, loss_train: {:.4f}, acc_train: {:.4f}, loss_val: {:.4f}, acc_val: {:.4f}, time: {:.4f}s\
+    '.format(epoch+1, loss_train.item(), acc_train.item(), loss_val.item(), acc_val.item(), time.time() - t))
 
 
 def test():
@@ -90,17 +104,16 @@ def test():
     output = model(features, adj)
     loss_test = F.nll_loss(output[idx_test], labels[idx_test])
     acc_test = accuracy(output[idx_test], labels[idx_test])
-    print("Test set results:",
-          "loss= {:.4f}".format(loss_test.item()),
-          "accuracy= {:.4f}".format(acc_test.item()))
+    logger.info("Test set results: \
+        loss= {:.4f}, accuracy= {:.4f}".format(loss_test.item(), acc_test.item()))
 
 
 # Train model
 t_total = time.time()
 for epoch in range(args.epochs):
     train(epoch)
-print("Optimization Finished!")
-print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
+logger.info("Optimization Finished!")
+logger.info("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
 # Testing
 test()
