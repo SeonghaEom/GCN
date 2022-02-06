@@ -11,8 +11,9 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 
-from pygcn.utils import load_data, accuracy
+from pygcn.utils import accuracy, load_data_cora, masked_loss, masked_acc
 from pygcn.models import GCN
+from pygcn.data import load_data, preprocess_features, preprocess_adj
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -31,6 +32,8 @@ parser.add_argument('--hidden', type=int, default=16,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.5,
                     help='Dropout rate (1 - keep probability).')
+parser.add_argument('--dataset', type=str, default='cora',
+                    help='Dataset string')
 
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -57,33 +60,70 @@ logger.addHandler(ch)
 logger.info(args)
 
 # Load data
-adj, features, labels, idx_train, idx_val, idx_test = load_data()
+if args.dataset!="cora":
+    adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset_str=args.dataset)
+    print('adj:', adj.shape)
+    print('features:', features.shape)
+    print('y:', y_train.shape, y_val.shape, y_test.shape)
+    print('mask:', train_mask.shape, val_mask.shape, test_mask.shape)
+
+    features = preprocess_features(features) # [49216, 2], [49216], [2708, 1433]
+    supports = preprocess_adj(adj)
+
+    device = torch.device('cuda')
+    train_label = torch.from_numpy(y_train).long().to(device)
+    num_classes = train_label.shape[1]
+    train_label = train_label.argmax(dim=1)
+    train_mask = torch.from_numpy(train_mask.astype(np.int)).float().to(device)
+    val_label = torch.from_numpy(y_val).long().to(device)
+    val_label = val_label.argmax(dim=1)
+    val_mask = torch.from_numpy(val_mask.astype(np.int)).to(device)
+    test_label = torch.from_numpy(y_test).long().to(device)
+    test_label = test_label.argmax(dim=1)
+    test_mask = torch.from_numpy(test_mask.astype(np.int)).to(device)
+
+    i = torch.from_numpy(features[0]).long().to(device)
+    v = torch.from_numpy(features[1]).to(device)
+    feature = torch.sparse.FloatTensor(i.t(), v, features[2]).float().to(device)
+
+    i = torch.from_numpy(supports[0]).long().to(device)
+    v = torch.from_numpy(supports[1]).to(device)
+    support = torch.sparse.FloatTensor(i.t(), v, supports[2]).float().to(device)
+
+    print('x :', feature)
+    print('sp:', support)
+    num_features_nonzero = feature._nnz()
+    feat_dim = feature.shape[1]
+else:
+    adj, features, labels, idx_train, idx_val, idx_test = load_data_cora()
+    print('adj:', adj.shape)
+    print('features:', features.shape)
+    print('labels:', labels.shape)
+    print('idx:', idx_train.shape, idx_val.shape, idx_test.shape)
 
 # Model and optimizer
-model = GCN(nfeat=features.shape[1],
+model = GCN(nfeat=feat_dim,
             nhid=args.hidden,
-            nclass=labels.max().item() + 1,
+            nclass=num_classes,
             dropout=args.dropout)
+model.to(device)
 optimizer = optim.Adam(model.parameters(),
                        lr=args.lr, weight_decay=args.weight_decay)
-
-if args.cuda:
-    model.cuda()
-    features = features.cuda()
-    adj = adj.cuda()
-    labels = labels.cuda()
-    idx_train = idx_train.cuda()
-    idx_val = idx_val.cuda()
-    idx_test = idx_test.cuda()
-
+model.train()
 
 def train(epoch):
     t = time.time()
     model.train()
     optimizer.zero_grad()
-    output = model(features, adj)
-    loss_train = F.nll_loss(output[idx_train], labels[idx_train])
-    acc_train = accuracy(output[idx_train], labels[idx_train])
+    out = model(feature, support)
+    print ("out: ", out.shape)
+    print ("train_label ", train_label.shape)
+    print ("train_mask ", train_mask.shape)
+    # out = output[0]
+    loss_train = masked_loss(out, train_label, train_mask)
+    loss_train += args.weight_decay * model.l2_loss()
+
+    acc_train = masked_acc(out, train_label, train_mask)
     loss_train.backward()
     optimizer.step()
 
@@ -91,19 +131,22 @@ def train(epoch):
         # Evaluate validation set performance separately,
         # deactivates dropout during validation run.
         model.eval()
-        output = model(features, adj)
+        with torch.no_grad():
+            output = model(feature, support)
+            # out = out[0]
 
-    loss_val = F.nll_loss(output[idx_val], labels[idx_val])
-    acc_val = accuracy(output[idx_val], labels[idx_val])
+    loss_val = masked_loss(out, val_label, val_mask)
+    acc_val = masked_acc(out, val_label, val_mask)
     logger.info('Epoch: {:04d}, loss_train: {:.4f}, acc_train: {:.4f}, loss_val: {:.4f}, acc_val: {:.4f}, time: {:.4f}s\
     '.format(epoch+1, loss_train.item(), acc_train.item(), loss_val.item(), acc_val.item(), time.time() - t))
 
 
 def test():
     model.eval()
-    output = model(features, adj)
-    loss_test = F.nll_loss(output[idx_test], labels[idx_test])
-    acc_test = accuracy(output[idx_test], labels[idx_test])
+    out = model(feature, support)
+    # out = out[0]
+    loss_test = masked_loss(out, test_label, test_mask)
+    acc_test = masked_acc(out, test_label, test_mask)
     logger.info("Test set results: \
         loss= {:.4f}, accuracy= {:.4f}".format(loss_test.item(), acc_test.item()))
 
