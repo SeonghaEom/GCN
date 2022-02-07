@@ -4,6 +4,8 @@ import  networkx as nx
 import  scipy.sparse as sp
 from    scipy.sparse.linalg.eigen.arpack import eigsh
 import  sys
+import os
+# from torch_geometric.datasets import NELL
 
 
 def parse_index_file(filename):
@@ -24,7 +26,6 @@ def sample_mask(idx, l):
     mask[idx] = 1
     return np.array(mask, dtype=np.bool)
 
-
 def load_data(dataset_str):
     """
     Loads input data from gcn/data directory
@@ -42,6 +43,7 @@ def load_data(dataset_str):
     :param dataset_str: Dataset name
     :return: All data input files loaded (as well the training/test data).
     """
+
     names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
     objects = []
     for i in range(len(names)):
@@ -52,8 +54,39 @@ def load_data(dataset_str):
                 objects.append(pkl.load(f))
 
     x, y, tx, ty, allx, ally, graph = tuple(objects)
+    print (allx.shape, tx.shape, x.shape)
     test_idx_reorder = parse_index_file("data/{}/ind.{}.test.index".format(dataset_str, dataset_str))
     test_idx_range = np.sort(test_idx_reorder)
+    print (len(test_idx_range))
+
+    if dataset_str == 'nell.0.001':
+        # Find relation nodes, add them as zero-vecs into the right position
+        test_idx_range_full = range(allx.shape[0], len(graph))
+        isolated_node_idx = np.setdiff1d(test_idx_range_full, test_idx_reorder)
+        tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
+        tx_extended[test_idx_range-allx.shape[0], :] = tx
+        tx = tx_extended
+        ty_extended = np.zeros((len(test_idx_range_full), y.shape[1]))
+        ty_extended[test_idx_range-allx.shape[0], :] = ty
+        ty = ty_extended
+
+        features = sp.vstack((allx, tx)).tolil()
+        features[test_idx_reorder, :] = features[test_idx_range, :]
+
+        idx_all = np.setdiff1d(range(len(graph)), isolated_node_idx)
+
+        if not os.path.isfile("data/{}.features.npz".format(dataset_str)):
+            print("Creating feature vectors for relations - this might take a while...")
+            features_extended = sp.hstack((features, sp.lil_matrix((features.shape[0], len(isolated_node_idx)))),
+                                          dtype=np.int32).todense()
+            features_extended[isolated_node_idx, features.shape[1]:] = np.eye(len(isolated_node_idx))
+            features = sp.csr_matrix(features_extended)
+            print("Done!")
+            sp.save_npz("data/{}.features".format(dataset_str), features)
+        else:
+            features = sp.load_npz("data/{}.features.npz".format(dataset_str))
+
+        adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
     if dataset_str == 'citeseer':
         # Fix citeseer dataset (there are some isolated nodes in the graph)
@@ -67,6 +100,7 @@ def load_data(dataset_str):
         ty = ty_extended
 
     features = sp.vstack((allx, tx)).tolil()
+    print (features.shape)
     features[test_idx_reorder, :] = features[test_idx_range, :]
     adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
@@ -137,3 +171,5 @@ def preprocess_adj(adj):
     """Preprocessing of adjacency matrix for simple GCN model and conversion to tuple representation."""
     adj_normalized = normalize_adj(adj + sp.eye(adj.shape[0]))
     return sparse_to_tuple(adj_normalized)
+
+
