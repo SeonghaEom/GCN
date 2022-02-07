@@ -2,11 +2,13 @@ import  numpy as np
 import  pickle as pkl
 import  networkx as nx
 import  scipy.sparse as sp
+from scipy.sparse import csr_matrix
 from    scipy.sparse.linalg.eigen.arpack import eigsh
 import  sys
 import os
+import logging
 # from torch_geometric.datasets import NELL
-
+logger = logging.getLogger()
 
 def parse_index_file(filename):
     """
@@ -25,6 +27,18 @@ def sample_mask(idx, l):
     mask = np.zeros(l)
     mask[idx] = 1
     return np.array(mask, dtype=np.bool)
+
+"""
+https://github.com/tkipf/gcn/issues/14
+"""
+def save_sparse_csr(filename,array):
+    np.savez(filename,data = array.data ,indices=array.indices,
+             indptr =array.indptr, shape=array.shape )
+
+def load_sparse_csr(filename):
+    loader = np.load(filename)
+    return csr_matrix((  loader['data'], loader['indices'], loader['indptr']),
+                         shape = loader['shape'])
 
 def load_data(dataset_str):
     """
@@ -54,13 +68,15 @@ def load_data(dataset_str):
                 objects.append(pkl.load(f))
 
     x, y, tx, ty, allx, ally, graph = tuple(objects)
-    print (allx.shape, tx.shape, x.shape)
     test_idx_reorder = parse_index_file("data/{}/ind.{}.test.index".format(dataset_str, dataset_str))
     test_idx_range = np.sort(test_idx_reorder)
-    print (len(test_idx_range))
+    print ("test idx range: ", len(test_idx_range))
 
     if dataset_str == 'nell.0.001':
-        # Find relation nodes, add them as zero-vecs into the right position
+        """
+        https://github.com/tkipf/gcn/issues/14
+        Find relation nodes, add them as zero-vecs into the right position
+        """
         test_idx_range_full = range(allx.shape[0], len(graph))
         isolated_node_idx = np.setdiff1d(test_idx_range_full, test_idx_reorder)
         tx_extended = sp.lil_matrix((len(test_idx_range_full), x.shape[1]))
@@ -82,13 +98,23 @@ def load_data(dataset_str):
             features_extended[isolated_node_idx, features.shape[1]:] = np.eye(len(isolated_node_idx))
             features = sp.csr_matrix(features_extended)
             print("Done!")
-            sp.save_npz("data/{}.features".format(dataset_str), features)
+            save_sparse_csr("data/{}.features".format(dataset_str), features)
         else:
-            features = sp.load_npz("data/{}.features.npz".format(dataset_str))
+            features = load_sparse_csr("data/{}.features.npz".format(dataset_str))
 
         adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+        print (allx.shape, tx.shape, x.shape)
+        print (len(test_idx_range))
+        
+        logger.info("the feature vectors of the labeled training instances: {}".format(x.shape))
+        logger.info("the one-hot labels of the labeled training instances: {}".format(y.shape))
+        logger.info("the feature vectors and labels of both labeled and unlabeled training instances (a superset of x): {} {}".format(allx.shape, ally.shape))
+        logger.info("the feature vectors of the test instances: {}".format(tx.shape))
+        logger.info("the one-hot labels of the test instances: {}".format(ty.shape))
+        logger.info("feature shape: {}".format(features.shape))
+        
 
-    if dataset_str == 'citeseer':
+    elif dataset_str == 'citeseer':
         # Fix citeseer dataset (there are some isolated nodes in the graph)
         # Find isolated nodes, add them as zero-vecs into the right position
         test_idx_range_full = range(min(test_idx_reorder), max(test_idx_reorder)+1)
@@ -99,10 +125,16 @@ def load_data(dataset_str):
         ty_extended[test_idx_range-min(test_idx_range), :] = ty
         ty = ty_extended
 
-    features = sp.vstack((allx, tx)).tolil()
-    print (features.shape)
-    features[test_idx_reorder, :] = features[test_idx_range, :]
-    adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+        features = sp.vstack((allx, tx)).tolil()
+        print (features.shape)
+        features[test_idx_reorder, :] = features[test_idx_range, :]
+        adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
+
+    else:
+        features = sp.vstack((allx, tx)).tolil()
+        print (features.shape)
+        features[test_idx_reorder, :] = features[test_idx_range, :]
+        adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
     labels = np.vstack((ally, ty))
     labels[test_idx_reorder, :] = labels[test_idx_range, :]
@@ -149,7 +181,7 @@ def preprocess_features(features):
     """
     Row-normalize feature matrix and convert to tuple representation
     """
-    rowsum = np.array(features.sum(1)) # get sum of each row, [2708, 1]
+    rowsum = np.array(features.sum(1), dtype=np.float32) # get sum of each row, [2708, 1]
     r_inv = np.power(rowsum, -1).flatten() # 1/rowsum, [2708]
     r_inv[np.isinf(r_inv)] = 0. # zero inf data
     r_mat_inv = sp.diags(r_inv) # sparse diagonal matrix, [2708, 2708]
