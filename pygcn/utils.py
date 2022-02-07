@@ -95,6 +95,7 @@ def load_data(path="data/cora/", dataset="cora"):
     # return adj, features, labels, idx_train, idx_val, idx_test
 
 def load_data_cora(path="data/cora/", dataset="cora"):
+    """Load cora.content & cora.cites dataset provided from original pygcn source code"""
     """Load citation network dataset (cora only for now)"""
     print('Loading {} dataset...'.format(dataset))
 
