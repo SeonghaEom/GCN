@@ -13,7 +13,7 @@ import torch.optim as optim
 
 from pygcn.utils import accuracy, masked_loss, masked_acc
 from pygcn.models import GCN
-from pygcn.data import load_data, preprocess_features, preprocess_adj
+from pygcn.data import load_data, preprocess_features, preprocess_adj, load_cora_new
 
 # Training settings
 parser = argparse.ArgumentParser()
@@ -61,6 +61,7 @@ logger.info(args)
 
 # Load data
 adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset_str=args.dataset)
+# features = load_cora_new()
 logger.info('adj: {}'.format(adj.shape))
 logger.info('features: {}'.format(features.shape))
 logger.info('y tr{} val{} te{} '.format(y_train.shape, y_val.shape, y_test.shape))

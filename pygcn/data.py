@@ -124,13 +124,15 @@ def load_data(dataset_str):
         ty = ty_extended
 
         features = sp.vstack((allx, tx)).tolil()
-        # print (features.shape)
         features[test_idx_reorder, :] = features[test_idx_range, :]
         adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
     else:
         features = sp.vstack((allx, tx)).tolil()
-        # print (features.shape)
+        features_new = load_cora_new()
+        # features = sp.hstack((features, features_new)).tolil()
+        features = sp.lil_matrix(features_new)
+        print (features.shape)
         features[test_idx_reorder, :] = features[test_idx_range, :]
         adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
@@ -203,3 +205,7 @@ def preprocess_adj(adj):
     return sparse_to_tuple(adj_normalized)
 
 
+def load_cora_new():
+    features = np.load('data/cora/cora.features.npy')
+    print (features.shape)
+    return features
