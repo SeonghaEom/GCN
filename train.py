@@ -61,10 +61,10 @@ logger.info(args)
 
 # Load data
 adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset_str=args.dataset)
-print('adj:', adj.shape)
-print('features:', features.shape)
-print('y:', y_train.shape, y_val.shape, y_test.shape)
-print('mask:', train_mask.shape, val_mask.shape, test_mask.shape)
+logger.info('adj: {}'.format(adj.shape))
+logger.info('features: {}'.format(features.shape))
+logger.info('y tr{} val{} te{} '.format(y_train.shape, y_val.shape, y_test.shape))
+logger.info('mask tr{} val{} te{}'.format(train_mask.shape, val_mask.shape, test_mask.shape))
 
 features = preprocess_features(features) # [49216, 2], [49216], [2708, 1433]
 supports = preprocess_adj(adj)
@@ -89,8 +89,8 @@ i = torch.from_numpy(supports[0]).long().to(device)
 v = torch.from_numpy(supports[1]).to(device)
 support = torch.sparse.FloatTensor(i.t(), v, supports[2]).float().to(device)
 
-print('x :', feature)
-print('sp:', support)
+logger.info('x :{}'.format(feature.shape))
+logger.info('sp: {}'.format(support.shape))
 num_features_nonzero = feature._nnz()
 feat_dim = feature.shape[1]
 
@@ -109,9 +109,9 @@ def train(epoch):
     model.train()
     optimizer.zero_grad()
     out = model(feature, support)
-    print ("out: ", out.shape)
-    print ("train_label ", train_label.shape)
-    print ("train_mask ", train_mask.shape)
+    logger.info ("out: {}".format(out.shape))
+    logger.info ("train_label {}".format(train_label.shape))
+    logger.info ("train_mask {}".format(train_mask.shape))
     # out = output[0]
     loss_train = masked_loss(out, train_label, train_mask)
     loss_train += args.weight_decay * model.l2_loss()
@@ -119,14 +119,6 @@ def train(epoch):
     acc_train = masked_acc(out, train_label, train_mask)
     loss_train.backward()
     optimizer.step()
-
-    if not args.fastmode:
-        # Evaluate validation set performance separately,
-        # deactivates dropout during validation run.
-        model.eval()
-        with torch.no_grad():
-            output = model(feature, support)
-            # out = out[0]
 
     loss_val = masked_loss(out, val_label, val_mask)
     acc_val = masked_acc(out, val_label, val_mask)

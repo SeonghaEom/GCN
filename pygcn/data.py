@@ -70,7 +70,7 @@ def load_data(dataset_str):
     x, y, tx, ty, allx, ally, graph = tuple(objects)
     test_idx_reorder = parse_index_file("data/{}/ind.{}.test.index".format(dataset_str, dataset_str))
     test_idx_range = np.sort(test_idx_reorder)
-    print ("test idx range: ", len(test_idx_range))
+    # print ("test idx range: ", len(test_idx_range))
 
     if dataset_str == 'nell.0.001':
         """
@@ -103,8 +103,6 @@ def load_data(dataset_str):
             features = load_sparse_csr("data/{}.features.npz".format(dataset_str))
 
         adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
-        print (allx.shape, tx.shape, x.shape)
-        print (len(test_idx_range))
         
         logger.info("the feature vectors of the labeled training instances: {}".format(x.shape))
         logger.info("the one-hot labels of the labeled training instances: {}".format(y.shape))
@@ -126,13 +124,13 @@ def load_data(dataset_str):
         ty = ty_extended
 
         features = sp.vstack((allx, tx)).tolil()
-        print (features.shape)
+        # print (features.shape)
         features[test_idx_reorder, :] = features[test_idx_range, :]
         adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
     else:
         features = sp.vstack((allx, tx)).tolil()
-        print (features.shape)
+        # print (features.shape)
         features[test_idx_reorder, :] = features[test_idx_range, :]
         adj = nx.adjacency_matrix(nx.from_dict_of_lists(graph))
 
